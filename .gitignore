@@ -1,7 +1,12 @@
-.env
+.env*
+!.env.example
 .venv/
 cache/
 __pycache__/
 logs/
 *.log
 quarantine/
+results/
+.pytest_cache/
+.ruff_cache/
+dist/

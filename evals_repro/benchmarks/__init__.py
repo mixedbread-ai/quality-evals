@@ -17,6 +17,27 @@ class Benchmark:
 
 
 def registry() -> dict[str, Benchmark]:
-    from evals_repro.benchmarks import miracl_vision, vidore_v3
+    from evals_repro.benchmarks import (
+        cure,
+        financebench,
+        followir,
+        freshstack,
+        legalragbench,
+        miracl_vision,
+        text,
+        vidore_v3,
+    )
 
-    return {b.name: b for b in (vidore_v3.BENCHMARK, miracl_vision.BENCHMARK)}
+    return {
+        b.name: b
+        for b in (
+            vidore_v3.BENCHMARK,
+            miracl_vision.BENCHMARK,
+            text.BENCHMARK,
+            financebench.BENCHMARK,
+            legalragbench.BENCHMARK,
+            cure.BENCHMARK,
+            freshstack.BENCHMARK,
+            followir.BENCHMARK,
+        )
+    }

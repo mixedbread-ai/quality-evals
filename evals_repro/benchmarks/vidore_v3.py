@@ -20,6 +20,17 @@ NATIVE_LANGUAGE = {
 }
 LANGUAGES = ("english", "french", "spanish", "italian", "german", "portuguese")
 
+REVISIONS = {
+    "computer_science": "d5cc75883d92e294f0c0fc2662551c9708a06ebc",
+    "energy": "caec06d3c73434d635f710f93bcd898331c59f20",
+    "finance_en": "7f432c176d82e27546501ad8064a713ac3071809",
+    "finance_fr": "1d808daa08032ffecdf62da151a7f7a8fe2bd0c9",
+    "hr": "0cdf0979f2c5a0fd3e335e6373b9da48a9fe3bc3",
+    "industrial": "e26c864724f5dd71a3d7d739272d95637764cee9",
+    "pharmaceuticals": "3abd4aa8a9445fb5538a78a19ba50bd57bd22b5c",
+    "physics": "a0de276f515acc044b72cae8de53a44bb5a8f1f5",
+}
+
 
 def repo_id(subset: str) -> str:
     return f"vidore/vidore_v3_{subset}"
@@ -27,7 +38,9 @@ def repo_id(subset: str) -> str:
 
 def snapshot(subset: str) -> Path:
     patterns = ["corpus/*.parquet", "queries/*.parquet", "qrels/*.parquet"]
-    return Path(snapshot_download(repo_id(subset), repo_type="dataset", allow_patterns=patterns))
+    return Path(
+        snapshot_download(repo_id(subset), revision=REVISIONS[subset], repo_type="dataset", allow_patterns=patterns)
+    )
 
 
 def read_rows(root: Path, config: str, columns: list[str]) -> list[dict]:
@@ -64,7 +77,7 @@ def load_subset(subset: str) -> Subset:
     qrels = load_qrels(root)
     loaded = Subset(
         subset,
-        repo_id(subset),
+        repo_id(subset) + "@" + REVISIONS[subset],
         NATIVE_LANGUAGE[subset],
         load_pages(root),
         load_queries(root, qrels),

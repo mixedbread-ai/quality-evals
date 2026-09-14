@@ -28,6 +28,8 @@ def store_prefix(args: argparse.Namespace, benchmark: Benchmark) -> str:
 
 
 def build_retriever(args: argparse.Namespace, cache_dir: Path, prefix: str) -> Retriever:
+    if args.rerank and args.method in STORE_METHODS:
+        raise SystemExit("Mixedbread stores rerank with their own model; use mixedbread-*+rerank")
     if args.method == "bm25":
         retriever: Retriever = BM25Retriever()
     elif args.method in STORE_METHODS:
@@ -39,8 +41,6 @@ def build_retriever(args: argparse.Namespace, cache_dir: Path, prefix: str) -> R
         retriever = DenseRetriever(embedder, cache_dir, args.content)
     if args.content == "images" and args.method not in EMBEDDERS:
         raise SystemExit("--content applies to dense embedders only")
-    if args.rerank and args.method in STORE_METHODS:
-        raise SystemExit("Mixedbread stores rerank with their own model; use mixedbread-*+rerank")
     if args.rerank:
         retriever = RerankedRetriever(retriever, RERANKERS[args.rerank](), args.rerank_depth)
     return retriever
@@ -79,6 +79,48 @@ def show(args: argparse.Namespace) -> None:
     print(report(args.results_dir / benchmark.name, benchmark, args.measure, args.first_stage_only))
 
 
+def run_study(args: argparse.Namespace) -> None:
+    from evals_repro.study import BENCHMARKS as STUDY_BENCHMARKS
+    from evals_repro.study import study
+
+    names = STUDY_BENCHMARKS if args.benchmark == "all" else (args.benchmark,)
+    if args.subsets and len(names) > 1:
+        raise SystemExit("--subsets requires one --benchmark")
+    if args.first_stage == "mixedbread-markdown" and names != ("vidore-v3",):
+        raise SystemExit("Markdown-store studies require --benchmark vidore-v3")
+    if min(args.depth, args.samples, args.quality_workers, args.voyage_tpm) < 1 or args.voyage_interval < 0:
+        raise SystemExit("Counts must be positive and the Voyage interval must be nonnegative")
+    if "followir" in names and args.depth != 100:
+        raise SystemExit("FollowIR uses a fixed candidate depth of 100")
+    if len(args.models) != len(set(args.models)):
+        raise SystemExit("Select each model once")
+    if args.subsets and len(args.subsets) != len(set(args.subsets)):
+        raise SystemExit("Select each subset once")
+    for name in names:
+        if (
+            args.phase == "report"
+            and args.benchmark == "all"
+            and not (args.study_dir / name / "monolingual" / "manifest.json").exists()
+        ):
+            continue
+        selected = argparse.Namespace(**vars(args))
+        selected.first_stage = args.first_stage or ("mixedbread-markdown" if name == "vidore-v3" else "bm25")
+        selected.store_prefix = args.store_prefix or "vidore-eval"
+        study(selected, BENCHMARKS[name])
+    if args.phase == "report" and args.benchmark == "all":
+        from evals_repro.overview import overview
+
+        print(overview(args.study_dir, [BENCHMARKS[name] for name in names]))
+
+
+def serve_reranker(args: argparse.Namespace) -> None:
+    from evals_repro.serve import serve
+
+    if len(set(args.devices)) != len(args.devices) or not 0 < args.memory_fraction < 1:
+        raise SystemExit("GPU devices must be unique and memory fraction must be between 0 and 1")
+    serve(args)
+
+
 def main() -> None:
     load_dotenv(ROOT / ".env")
     shared = argparse.ArgumentParser(add_help=False)
@@ -114,6 +156,39 @@ def main() -> None:
     reporter.add_argument("--measure", default="ndcg_cut_10")
     reporter.add_argument("--first-stage-only", action="store_true")
     reporter.set_defaults(func=show)
+
+    from evals_repro.local_rerank import LOCAL_MODELS
+    from evals_repro.study import BENCHMARKS as STUDY_BENCHMARKS
+    from evals_repro.study import METHODS
+
+    experiment = commands.add_parser("rerank-study", parents=[selection])
+    experiment.add_argument("phase", choices=["prepare", "quality", "latency", "report"])
+    experiment.add_argument("--benchmark", choices=["all", *STUDY_BENCHMARKS], default="all")
+    experiment.add_argument("--models", nargs="+", choices=[*METHODS, *LOCAL_MODELS], default=list(METHODS))
+    experiment.add_argument("--study-dir", type=Path, default=ROOT / "results" / "rerank-study")
+    experiment.add_argument("--cache-dir", type=Path, default=ROOT / "cache" / "bm25")
+    experiment.add_argument(
+        "--first-stage",
+        choices=["bm25", "mixedbread-markdown"],
+        help="default: Markdown stores for ViDoRe, BM25 otherwise",
+    )
+    experiment.add_argument("--depth", type=int, default=100)
+    experiment.add_argument("--samples", type=int, default=20)
+    experiment.add_argument("--repeats", type=int, choices=[5, 10], default=5)
+    experiment.add_argument("--seed", type=int, default=42)
+    experiment.add_argument("--quality-workers", type=int, default=2, help="concurrent quality requests per provider")
+    experiment.add_argument("--voyage-tpm", type=int, default=2_000_000)
+    experiment.add_argument("--voyage-interval", type=float, default=3)
+    experiment.add_argument("--host-location", default="unspecified")
+    experiment.set_defaults(func=run_study)
+
+    server = commands.add_parser("serve-reranker")
+    server.add_argument("model", choices=list(LOCAL_MODELS))
+    server.add_argument("--devices", nargs="+", default=["0"])
+    server.add_argument("--host", default="127.0.0.1")
+    server.add_argument("--port", type=int)
+    server.add_argument("--memory-fraction", type=float, default=0.85)
+    server.set_defaults(func=serve_reranker)
 
     args = parser.parse_args()
     args.func(args)

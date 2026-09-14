@@ -18,3 +18,15 @@ def test_lexical_match_ranks_first():
 
 def test_no_overlap_returns_nothing():
     assert BM25Retriever().run(subset(), [Query("q", "quantum", "english")], top_k=10) == {"q": {}}
+
+
+def test_disk_cache_preserves_rankings_and_candidate_mode_keeps_zero_scores(tmp_path):
+    queries = [Query("q", "sourdough bread", "english"), Query("none", "quantum", "english")]
+    first = BM25Retriever(cache_dir=tmp_path, include_zero=True).run(subset(), queries, 3)
+    loaded = BM25Retriever(cache_dir=tmp_path, include_zero=True).run(subset(), queries, 3)
+    assert first == loaded
+    assert len(first["none"]) == 3 and set(first["none"].values()) == {0.0}
+    changed = subset()
+    changed.pages["0"] = "sourdough bread sourdough bread"
+    rebuilt = BM25Retriever(cache_dir=tmp_path, include_zero=True).run(changed, queries, 3)
+    assert max(rebuilt["q"], key=rebuilt["q"].get) == "0"

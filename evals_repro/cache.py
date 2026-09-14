@@ -1,5 +1,5 @@
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -7,7 +7,7 @@ import numpy as np
 Item = str | bytes | tuple[str | bytes, ...]
 
 
-def digest(items: Sequence[Item]) -> str:
+def digest(items: Iterable[Item]) -> str:
     h = hashlib.sha256()
     for item in items:
         for part in item if isinstance(item, tuple) else (item,):
