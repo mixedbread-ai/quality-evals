@@ -26,6 +26,14 @@ class Subset:
     images: Images = field(default=lambda: iter(()), repr=False)
     titles: dict[str, str] = field(default_factory=dict, repr=False)
 
+    corpus_id: str | None = None
+    retrieval_text: dict[str, str] = field(default_factory=dict)
+    annotations: dict = field(default_factory=dict)
+    additional_metrics: Callable[[dict], dict] | None = None
+
+    def documents(self, ids: Iterable[str]) -> list[str]:
+        return [self.pages[cid] for cid in ids]
+
     @property
     def languages(self) -> list[str]:
         return sorted({q.language for q in self.queries})

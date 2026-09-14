@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from evals_repro.data import Query, Subset
 from evals_repro.rerank import RerankedRetriever, scores_by_position
 from evals_repro.throttle import Budget
@@ -46,8 +48,9 @@ def test_empty_first_stage_skips_reranker():
     assert run == {"q": {}}
 
 
-def test_scores_by_position_fills_missing_with_minus_inf():
-    assert scores_by_position([SimpleNamespace(index=1, relevance_score=0.4)], 3) == [float("-inf"), 0.4, float("-inf")]
+def test_scores_by_position_rejects_incomplete_responses():
+    with pytest.raises(ValueError, match="Incomplete"):
+        scores_by_position([SimpleNamespace(index=1, relevance_score=0.4)], 3)
 
 
 def test_budget_sleeps_until_window_frees(monkeypatch):
@@ -58,7 +61,53 @@ def test_budget_sleeps_until_window_frees(monkeypatch):
         "evals_repro.throttle.time.sleep", lambda s: (slept.append(s), clock.__setitem__(0, clock[0] + s))
     )
     budget = Budget(100)
+    monkeypatch.setattr(budget.ready, "wait", lambda t: (slept.append(t), clock.__setitem__(0, clock[0] + t)))
     budget.reserve(60)
     budget.reserve(40)
     budget.reserve(10)
     assert slept and abs(slept[0] - 60) < 1e-9
+
+
+@pytest.mark.parametrize(
+    "results",
+    [
+        [{"index": 0, "relevance_score": 1}, {"index": 0, "relevance_score": 2}],
+        [{"index": 0, "relevance_score": 1}, {"index": 2, "relevance_score": 2}],
+        [{"index": 0, "relevance_score": 1}, {"index": 1, "relevance_score": float("nan")}],
+    ],
+)
+def test_score_indices_and_values_are_validated(results):
+    with pytest.raises(ValueError, match="Invalid"):
+        scores_by_position(results, 2)
+
+
+def test_voyage_splits_only_batch_overflow_without_changing_documents():
+    import voyageai
+
+    from evals_repro.rerank import VoyageReranker
+
+    calls = []
+
+    def rerank(**kwargs):
+        docs = kwargs["documents"]
+        calls.append(docs)
+        assert kwargs["truncation"] is False
+        if len(docs) > 2:
+            raise voyageai.error.InvalidRequestError("max allowed tokens per submitted batch", None)
+        return SimpleNamespace(results=[SimpleNamespace(index=i, relevance_score=float(d)) for i, d in enumerate(docs)])
+
+    runner = VoyageReranker(client=SimpleNamespace(rerank=rerank))
+    assert runner.rerank("q", ["1", "2", "3", "4"]) == [1, 2, 3, 4]
+    assert calls == [["1", "2", "3", "4"], ["1", "2"], ["3", "4"]]
+
+
+def test_cohere_study_disables_sdk_retries_and_requests_32k_documents():
+    from evals_repro.rerank import RERANKERS
+
+    def rerank(**kwargs):
+        assert kwargs["max_tokens_per_doc"] == 32768
+        assert kwargs["request_options"] == {"max_retries": 0}
+        return SimpleNamespace(results=[SimpleNamespace(index=0, relevance_score=0.8)])
+
+    model = RERANKERS["cohere-pro"](client=SimpleNamespace(rerank=rerank))
+    assert model.rerank("q", ["doc"]) == [0.8]

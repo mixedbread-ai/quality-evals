@@ -1,9 +1,9 @@
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from evals_repro.data import Subset
 from evals_repro.metrics import evaluate, summarize
+from evals_repro.records import save_json
 from evals_repro.retrievers import Retriever
 
 
@@ -25,8 +25,7 @@ class SubsetResult:
 
     def save(self, results_dir: Path) -> Path:
         path = result_path(results_dir, self.method, self.subset)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(self), indent=1))
+        save_json(path, asdict(self))
         return path
 
 

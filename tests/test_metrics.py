@@ -18,3 +18,10 @@ def test_graded_ndcg_uses_linear_gain():
     dcg = 1 / math.log2(2) + 2 / math.log2(3)
     ideal = 2 / math.log2(2) + 1 / math.log2(3)
     assert math.isclose(evaluate(qrels, run)["q"]["ndcg_cut_10"], dcg / ideal)
+
+
+def test_map_includes_relevant_documents_beyond_rank_ten():
+    run = {"q": {str(i): float(-i) for i in range(20)}}
+    result = evaluate({"q": {"19": 1}}, run)["q"]
+    assert result["map_cut_10"] == 0
+    assert result["map"] == 1 / 20

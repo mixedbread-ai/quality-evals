@@ -5,7 +5,7 @@ import pytrec_eval
 from evals_repro.index import Run
 
 Qrels = dict[str, dict[str, int]]
-MEASURES = frozenset({"ndcg_cut_10", "ndcg_cut_5", "recall_10", "recall_50", "recall_100", "map_cut_10"})
+MEASURES = frozenset({"ndcg_cut_10", "ndcg_cut_5", "recall_10", "recall_50", "recall_100", "map_cut_10", "map"})
 
 
 def evaluate(qrels: Qrels, run: Run, measures: frozenset[str] = MEASURES) -> dict[str, dict[str, float]]:
